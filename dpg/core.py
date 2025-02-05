@@ -480,7 +480,7 @@ def generate_dot(dfg):
         # Add the source node to the graph if not already added
         if k[0] not in added_nodes:
             dot.node(
-                str(int.from_bytes(hashlib.sha1(combined_str.encode()).digest(), byteorder='big')),
+                str(int(hashlib.sha1(k[0].encode()).hexdigest(), 16)),
                 label=f"{k[0]}",
                 style="filled",
                 fontsize="20",
@@ -491,7 +491,7 @@ def generate_dot(dfg):
         # Add the destination node to the graph if not already added
         if k[1] not in added_nodes:
             dot.node(
-                str(int.from_bytes(hashlib.sha1(combined_str.encode()).digest(), byteorder='big')),
+                str(int(hashlib.sha1(k[1].encode()).hexdigest(), 16)),
                 label=f"{k[1]}",
                 style="filled",
                 fontsize="20",
@@ -501,8 +501,8 @@ def generate_dot(dfg):
         
         # Add an edge between the source and destination nodes with the transition count as the label
         dot.edge(
-            str(int.from_bytes(hashlib.sha1(combined_str.encode()).digest(), byteorder='big')),
-            str(int.from_bytes(hashlib.sha1(combined_str.encode()).digest(), byteorder='big')),
+            str(int(hashlib.sha1(k[0].encode()).hexdigest(), 16)),
+            str(int(hashlib.sha1(k[1].encode()).hexdigest(), 16)),
             label=str(v),
             penwidth="1",
             fontsize="18"
