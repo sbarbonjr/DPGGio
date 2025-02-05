@@ -1,12 +1,15 @@
 import os
+import numpy as np
 from graphviz import Source
 import matplotlib.cm as cm
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
+from matplotlib.colors import LinearSegmentedColormap
 from PIL import Image
 from .utils import highlight_class_node, change_node_color, delete_folder_contents, change_edge_color
+import re
 
-def plot_dpg(plot_name, dot, df, df_edge, df_dpg, local_bounds, global_bounds, anomaly_bounds, save_dir="examples/", attribute=None, communities=False, class_flag=False, edge_attribute=None, variant=True):
+def plot_dpg(plot_name, dot, df, df_edge, df_dpg, save_dir="examples/", attribute=None, variant=False, communities=False, class_flag=False, edge_attribute=None):
     """
     Plots a Decision Predicate Graph (DPG) with various customization options.
 
@@ -35,7 +38,7 @@ def plot_dpg(plot_name, dot, df, df_edge, df_dpg, local_bounds, global_bounds, a
 
 
     # Color nodes based on a specific attribute
-    elif attribute is not None and not communities and edge_attribute is None and not variant:
+    elif attribute is not None and not variant and not communities and edge_attribute is None:
 
         colormap = cm.Blues  # Choose a colormap
         norm = None
@@ -54,6 +57,40 @@ def plot_dpg(plot_name, dot, df, df_edge, df_dpg, local_bounds, global_bounds, a
         
         for index, row in df.iterrows():
             color = "#{:02x}{:02x}{:02x}".format(int(colors[index][0]*255), int(colors[index][1]*255), int(colors[index][2]*255))
+            change_node_color(dot, row['Node'], color)
+        
+        plot_name = plot_name + f"_{attribute}".replace(" ","")
+
+
+    elif attribute is not None and variant and not communities and edge_attribute is None:
+
+        # colors = [(0, "#742881"), (0.5, "#f9f9f9"), (1, "#1b7939")]  # green-purple
+        colors = [(0, "#b31529"), (0.5, "#f9f9f9"), (1, "#1065ab")]  # blu-red
+        colormap = LinearSegmentedColormap.from_list("my_cmap", colors)
+
+        norm = plt.Normalize(vmin=-1, vmax=1)
+
+        # Highlight class nodes if class_flag is True
+        if class_flag:
+            for index, row in df.iterrows():
+                if 'Class -1' in row['Label']:
+                    change_node_color(dot, row['Node'], '#b31529')
+                elif 'Class 1' in row['Label']:
+                    change_node_color(dot, row['Node'], '#1065ab')
+            df = df[~df.Label.str.contains('Class')].reset_index(drop=True)  # Exclude class nodes from further processing
+        
+        # Normalize the attribute values if norm_flag is True
+               
+        color_values = norm(df[attribute])  # Convert attribute values directly to the colormap range
+        
+        colors = colormap(color_values)  # Get corresponding RGBA colors
+
+        for index, row in df.iterrows():
+            color = "#{:02x}{:02x}{:02x}".format(
+                int(colors[index][0]*255), 
+                int(colors[index][1]*255), 
+                int(colors[index][2]*255)
+            )
             change_node_color(dot, row['Node'], color)
         
         plot_name = plot_name + f"_{attribute}".replace(" ","")
@@ -106,31 +143,6 @@ def plot_dpg(plot_name, dot, df, df_edge, df_dpg, local_bounds, global_bounds, a
                 change_node_color(dot, row['Node'], "#{:02x}{:02x}{:02x}".format(255, 153, 153))  # Light red for class nodes
             else:
                 change_node_color(dot, row['Node'], "#{:02x}{:02x}{:02x}".format(255, 255, 255))  # White for other nodes
-                
-                
-    elif attribute is not None and variant and not communities and edge_attribute is None:
-
-        colormap = cm.RdYlGn  # Choose a colormap
-        norm = None
-
-        # Highlight class nodes if class_flag is True
-        if class_flag:
-            for index, row in df.iterrows():
-                if 'Class' in row['Label']:
-                    change_node_color(dot, row['Node'], '#ffc000')  # Yellow for class nodes
-            df = df[~df.Label.str.contains('Class')].reset_index(drop=True)  # Exclude class nodes from further processing
-        
-        # Normalize the attribute values if norm_flag is True
-        max_score = df[attribute].max()
-        min_score = df[attribute].min()
-        norm = mcolors.Normalize(min_score, max_score)
-        colors = colormap(norm(df[attribute]))  # Assign colors based on normalized scores
-        
-        for index, row in df.iterrows():
-            color = "#{:02x}{:02x}{:02x}".format(int(colors[index][0]*255), int(colors[index][1]*255), int(colors[index][2]*255))
-            change_node_color(dot, row['Node'], color)
-        
-        plot_name = plot_name + f"_{attribute}".replace(" ","")      
     
     else:
         raise AttributeError("The plot can show the basic plot, communities or a specific node-metric")
@@ -156,7 +168,17 @@ def plot_dpg(plot_name, dot, df, df_edge, df_dpg, local_bounds, global_bounds, a
     # Highlight class nodes
     highlight_class_node(dot)
 
+    def to_sci_notation(match):
+        num = float(match.group(1))
+        return f'label="{num:.2e}"'
+    
+    pattern = r'label=([0-9]+\.?[0-9]*)'
+
+    for i in range(len(dot.body)):
+        dot.body[i] = re.sub(pattern, to_sci_notation, dot.body[i])
+            
     # Render the graph and display it
+    dot.render("temp/"+plot_name, format="pdf")
     graph = Source(dot.source, format="png")
     graph.render("temp/" + plot_name + "_temp", view=False)
 
@@ -167,15 +189,6 @@ def plot_dpg(plot_name, dot, df, df_edge, df_dpg, local_bounds, global_bounds, a
     plt.gca().axes.get_xaxis().set_visible(False)
     plt.title(plot_name)
     plt.imshow(img)
-    
-    # Crea una stringa formattata per ogni dizionario con chiave-valore su righe separate nel formato desiderato
-    inliers_str = "\n".join([f"{bounds['>']} < {key} <= {bounds['<=']}" for key, bounds in global_bounds.items()])
-    outliers_str = "\n".join([f"{bounds['>']} < {key} <= {bounds['<=']}" for key, bounds in local_bounds.items()])
-    anomalies_str = "\n".join([f"{bounds['>']} < {key} <= {bounds['<=']}" for key, bounds in anomaly_bounds.items()])
-
-    # Usa plt.figtext per inserire ogni blocco di testo nel grafico
-    plt.figtext(0.01, 0.85, f"Inliers Bounds:\n{inliers_str}\n\nOutlier Bounds:\n{outliers_str}\n\nAnomaly Bounds:\n{anomalies_str}", 
-                fontsize=12, ha='left', va='top', color='black')
     
     # Add a color bar if an attribute or edge attribute is specified
     if attribute is not None or edge_attribute is not None:
@@ -195,4 +208,5 @@ def plot_dpg(plot_name, dot, df, df_edge, df_dpg, local_bounds, global_bounds, a
     plt.close()
 
     # Clean up temporary files
-    delete_folder_contents("temp")
+    # delete_folder_contents("temp")
+

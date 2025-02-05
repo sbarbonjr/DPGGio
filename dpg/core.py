@@ -14,7 +14,7 @@ from joblib import Parallel, delayed
 from decimal import Decimal, ROUND_HALF_UP
 
 import time
-from collections import Counter
+from collections import Counter, defaultdict
 
 #EDITED
 
@@ -251,6 +251,8 @@ def filter_log(log, n_jobs=-1):
     # Calculate chunk size
     chunk_size = len(cases) // n_jobs if len(cases) // n_jobs > 0 else 1  # Ensure chunk_size is at least 1
     
+    print('>>>0>>>>>')
+
     # Split the cases into chunks
     chunks = [cases[i:i + chunk_size] for i in range(0, len(cases), chunk_size)]
     
@@ -258,6 +260,7 @@ def filter_log(log, n_jobs=-1):
     results = Parallel(n_jobs=n_jobs)(delayed(process_chunk)(chunk) for chunk in chunks)
 
     # Combine results into a single dictionary
+    print('>>>1>>>>>')
     variants = {}
     for result in results:
         for key, value in result.items():
@@ -268,11 +271,13 @@ def filter_log(log, n_jobs=-1):
 
     # Get the total number of unique traces in the log
     total_traces = log["case:concept:name"].nunique()
-
+    print('>>>2>>>>>', total_traces)
+    perc_var = 0.0001  # Percentage of variants to keep (1%)
     # Helper function to filter variants in parallel
     def filter_variants(chunk):
         local_cases, local_activities = [], []
         for k, v in chunk.items():
+            if len(v) / total_traces >= perc_var:
                 for case in v:
                     for act in k.split("|"):
                         local_cases.append(case)
@@ -367,124 +372,76 @@ def discover_dfg(log, predicates, mode_score, max_depth, n_outliers, n_inliers, 
     dfg: A dictionary where keys are tuples representing transitions between activities and values are the counts of those transitions.
     """
     
-    # Helper function to process a chunk of cases
+    preprocessed_traces = log.sort_values(by="case:concept:name").groupby("case:concept:name")
+
     def process_chunk(chunk, mode_score):
-            chunk_dfg = {}
-            # Dizionario separato per il conteggio delle transizioni
-            count_dfg = {}
-            if mode_score == "freq_pes": #più è piccolo meglio è
-                for case in chunk:
-                    # Extract the trace (sequence of activities) for the current case
-                    trace_df = log[log["case:concept:name"] == case].copy()
-                    trace_df.sort_values(by="case:concept:name", inplace=True)
+        chunk_dfg = defaultdict(float)
+        count_dfg = defaultdict(int)
+
+        for case in chunk:
+            trace_df = preprocessed_traces.get_group(case)
+
+            if mode_score == "freq_pes":
+                score_value = trace_df["concept:name:score"].iloc[0]
+                
+                if score_value == 0:
+                    multiplier = Decimal((n_outliers + n_inliers) / n_outliers).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+                elif score_value == 1:
+                    multiplier = Decimal((n_outliers + n_inliers) / n_inliers).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+                else:
+                    continue
+
+                transitions = zip(trace_df.iloc[:-1, 1], trace_df.iloc[1:, 1])
+                for key in transitions:
+                    chunk_dfg[key] += float(multiplier)
+
+            elif mode_score == "freq":
+                transitions = zip(trace_df.iloc[:-1, 1], trace_df.iloc[1:, 1])
+                for key in transitions:
+                    chunk_dfg[key] += 1
+
+            elif mode_score == "depth":
+                depth_values = trace_df.iloc[:-1, 4]
+                transitions = zip(trace_df.iloc[:-1, 1], trace_df.iloc[1:, 1])
+
+                for key, depth in zip(transitions, depth_values):
+                    depth_value = max_depth - depth
                     
-                    score_value = trace_df["concept:name:score"].iloc[0]
-                    if score_value == 0: # outliers
-                        # multiplier = 0
-                        multiplier = Decimal((n_outliers + n_inliers) / n_outliers).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
-                        # multiplier = Decimal(1 / n_outliers).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
-                        # multiplier = n_inliers
-                    elif score_value == 1: # inliers
-                        # multiplier = 1
-                        multiplier = Decimal((n_outliers + n_inliers) / n_inliers).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
-                        # multiplier = Decimal(1 / n_inliers).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
-                        # multiplier = n_outliers
+                    if count_dfg[key]:
+                        chunk_dfg[key] = round((chunk_dfg[key] * count_dfg[key] + depth_value) / (count_dfg[key] + 1), 2)
+                        count_dfg[key] += 1
                     else:
-                        continue
+                        chunk_dfg[key] = depth_value
+                        count_dfg[key] = 1
 
-                    # Iterate through the trace to capture transitions between consecutive activities
-                    for i in range(len(trace_df) - 1):
-                        key = (trace_df.iloc[i, 1], trace_df.iloc[i + 1, 1])  # Transition
-                        
-                        # score = Decimal(trace_df.iloc[i, 3]).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
-                        
-                        if key in chunk_dfg:
-                            chunk_dfg[key] += multiplier  # Increment count if transition exists
-                        else:
-                            chunk_dfg[key] = multiplier  # Initialize count if transition is new
-            
-            elif mode_score == "freq": #più è grande meglio è
-                for case in chunk:
-                    # Extract the trace (sequence of activities) for the current case
-                    trace_df = log[log["case:concept:name"] == case].copy()
-                    trace_df.sort_values(by="case:concept:name", inplace=True)
+            else:
+                raise ValueError("Invalid mode_score")
 
-                    # Iterate through the trace to capture transitions between consecutive activities
-                    for i in range(len(trace_df) - 1):
-                        key = (trace_df.iloc[i, 1], trace_df.iloc[i + 1, 1])  # Transition
-                        
-                        if key in chunk_dfg:
-                            chunk_dfg[key] += 1  # Increment count if transition exists
-                        else:
-                            chunk_dfg[key] = 1  # Initialize count if transition is new
-                            
-            elif mode_score == "depth": #più è piccolo meglio è
-                for case in chunk:
-                    # Extract the trace (sequence of activities) for the current case
-                    trace_df = log[log["case:concept:name"] == case].copy()
-                    trace_df.sort_values(by="case:concept:name", inplace=True)
+        return chunk_dfg
 
-                    # Iterate through the trace to capture transitions between consecutive activities
-                    for i in range(len(trace_df) - 1):
-                        key = (trace_df.iloc[i, 1], trace_df.iloc[i + 1, 1])  # Transition
-                        depth = trace_df.iloc[i, 4] # Use the last depth value for all transition
-                        
-                        # Calcola (max_depth - depth) per la transizione
-                        depth_value = max_depth - depth
-                        
-                        if key in chunk_dfg:
-                            # Se la transizione esiste già, aggiorna la media incrementale
-                            current_avg = chunk_dfg[key]  # Estrai la media corrente
-                            count = count_dfg[key]  # Estrai il conteggio corrente
-                            new_avg = (current_avg * count + depth_value) / (count + 1)  # Calcola la nuova media
-                            chunk_dfg[key] = round(new_avg, 2)  # Aggiorna solo con la nuova media
-                            count_dfg[key] = count + 1  # Incrementa il conteggio
-                        else:
-                            # Inizializza con il valore di depth e il conteggio a 1
-                            chunk_dfg[key] = depth_value
-                            count_dfg[key] = 1  # Inizializza il conteggio a 1
-                        
-            else:     
-                raise Exception("mode_score wrong") 
-            return chunk_dfg
-     
-
-    # Get all unique case names
+    # Parallel Processing Setup
     cases = log["case:concept:name"].unique()
-    print("Remaining paths:", len(cases))
+
     if len(cases) == 0:
-       raise Exception("There is no paths with the current value of perc_var and decimal_threshold! Try one less restrictive.") 
+        raise ValueError("No paths with current perc_var and decimal_threshold.")
 
-    # If n_jobs is -1, use all available CPUs, otherwise use the provided n_jobs
-    if n_jobs == -1:
-        n_jobs = os.cpu_count()  # Get the number of available CPU cores
-    
-    # Ensure n_jobs is at least 1 and no larger than the number of cases
-    n_jobs = max(min(n_jobs, len(cases)), 1)  # Ensure n_jobs is within valid range
-
-    # Calculate chunk size, ensure chunk size is at least 1
-    chunk_size = max(len(cases) // n_jobs, 1)  # Ensure chunk_size is at least 1
-    
-    # Split the cases into chunks
+    n_jobs = os.cpu_count() if n_jobs == -1 else max(min(n_jobs, len(cases)), 1)
+    chunk_size = max(len(cases) // n_jobs, 1)
     chunks = [cases[i:i + chunk_size] for i in range(0, len(cases), chunk_size)]
 
-    # Process each chunk in parallel
+    # Process in parallel
     start_time = time.time()
-    print("Traversing...")
     results = Parallel(n_jobs=n_jobs)(delayed(process_chunk)(chunk, mode_score) for chunk in chunks)
     end_time = time.time()
-    print(f"Time: {round(end_time - start_time, 2)} sec")
 
-    # Merge all chunk DFGs into a single DFG dictionary
-    print("Aggregating...")
-    dfg = {}
+    print(f"Processing Time: {round(end_time - start_time, 2)} sec")
+
+    # Aggregation
+    dfg = defaultdict(float)
     for result in results:
         for key, value in result.items():
-            if key in dfg:
-                dfg[key] += value  # Aggregate counts for shared transitions
-            else:
-                dfg[key] = value
-    # Return the final DFG dictionary
+            dfg[key] += value
+
     return dfg, log
 
 def generate_dot(dfg):
@@ -523,7 +480,7 @@ def generate_dot(dfg):
         # Add the source node to the graph if not already added
         if k[0] not in added_nodes:
             dot.node(
-                str(int(hashlib.sha1(k[0].encode()).hexdigest(), 16)),
+                str(int(hashlib.sha1(k[0].encode()).hexdigest(), 8)),
                 label=f"{k[0]}",
                 style="filled",
                 fontsize="20",
@@ -534,7 +491,7 @@ def generate_dot(dfg):
         # Add the destination node to the graph if not already added
         if k[1] not in added_nodes:
             dot.node(
-                str(int(hashlib.sha1(k[1].encode()).hexdigest(), 16)),
+                str(int(hashlib.sha1(k[1].encode()).hexdigest(), 8)),
                 label=f"{k[1]}",
                 style="filled",
                 fontsize="20",
@@ -544,8 +501,8 @@ def generate_dot(dfg):
         
         # Add an edge between the source and destination nodes with the transition count as the label
         dot.edge(
-            str(int(hashlib.sha1(k[0].encode()).hexdigest(), 16)),
-            str(int(hashlib.sha1(k[1].encode()).hexdigest(), 16)),
+            str(int(hashlib.sha1(k[0].encode()).hexdigest(), 8)),
+            str(int(hashlib.sha1(k[1].encode()).hexdigest(), 8)),
             label=str(v),
             penwidth="1",
             fontsize="18"
@@ -781,11 +738,12 @@ def get_dpg(X_train, feature_names, model, decimal_threshold, predicates, mode_g
     log_df = pd.DataFrame(event_log, columns=["case:concept:name", "concept:name"])
     print(f"Total paths: {len(log_df['case:concept:name'].unique())}")
 
-    print("Filtering structure...")
-    filtered_log = filter_log(log_df)
+    #print("Filtering structure...")
+    #filtered_log = filter_log(log_df)
 
+    #log_df.to_csv('FULL_log_df.csv', index=False)
     print("Building DPG...")
-    dfg, log_base = discover_dfg(filtered_log, predicates, mode_score, max_depth, n_outliers, n_inliers)
+    dfg, log_base = discover_dfg(log_df, predicates, mode_score, max_depth, n_outliers, n_inliers)
 
     print("Extracting graph...")
     dot = generate_dot(dfg)
