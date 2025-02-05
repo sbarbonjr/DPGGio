@@ -1,0 +1,1 @@
+python dpg_custom.py --ds "../Datasets/http_preprocessed.csv" --l 200  --t 2 --cont 0.007 --seed 42 --dir "./iForest_results_clf/" --save_plot_dir "./iForest_results_clf/" --predicates "feature_operator" --mode "global" --mode_graph "all" --mode_score "freq_pes" --plot --attribute "In Out Weight"  
