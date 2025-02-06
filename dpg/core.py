@@ -755,7 +755,7 @@ def get_dpg(X_train, feature_names, model, decimal_threshold, predicates, mode_g
 
     #log_df.to_csv('FULL_log_df.csv', index=False)
     print("Building DPG...")
-    dfg, log_base = discover_dfg(log_df, predicates, mode_score, max_depth, n_outliers, n_inliers)
+    dfg, log_base = discover_dfg(log_df, predicates, mode_score, max_depth, n_outliers, n_inliers, n_jobs)
 
     print("Extracting graph...")
     dot = generate_dot(dfg)

@@ -23,6 +23,7 @@ if __name__ == "__main__":
     parser.add_argument("--mode_graph", type=str, default="all", help="All graph or last decisions")    #EDITED
     parser.add_argument("--mode_score", type=str, default="log2", help="Frequency or aggregate score (log2)")    #EDITED
     parser.add_argument("--edge_attribute", type=str, default=None, help="A specific edge attribute to visualize") #EDITED
+    parser.add_argument("--n_jobs", type=int, default=1, help="Number of jobs to run in parallel")
     args = parser.parse_args()
 
 
@@ -42,7 +43,8 @@ if __name__ == "__main__":
                                             mode = args.mode,
                                             mode_graph = args.mode_graph,
                                             mode_score = args.mode_score,
-                                            edge_attribute = args.edge_attribute)
+                                            edge_attribute = args.edge_attribute,
+                                            n_jobs=args.n_jobs)
 
     
     nameDataset = os.path.splitext(os.path.basename(args.ds))[0]

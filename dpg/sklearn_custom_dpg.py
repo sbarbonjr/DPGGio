@@ -42,7 +42,7 @@ def select_custom_dataset(path):
 
 
 
-def test_base_sklearn(datasets, n_learners, decimal_threshold, contamination, seed, file_name=None, plot=False, save_plot_dir="examples/", attribute=None, communities=False, class_flag=False, predicates="feature_operator", mode="global_inliers", mode_graph="all", mode_score="log2", edge_attribute=None):     #EDITED
+def test_base_sklearn(datasets, n_learners, decimal_threshold, contamination, seed, file_name=None, plot=False, save_plot_dir="examples/", attribute=None, communities=False, class_flag=False, predicates="feature_operator", mode="global_inliers", mode_graph="all", mode_score="log2", edge_attribute=None, n_jobs=-1):     #EDITED
     """
     Trains a Random Forest classifier on a selected dataset, evaluates its performance, and optionally plots the DPG.
 
@@ -122,7 +122,7 @@ def test_base_sklearn(datasets, n_learners, decimal_threshold, contamination, se
     
     if(mode == "global"):         
         # Extract DPG
-        dot, event_log, log_base = get_dpg(data, features_name, iForest, decimal_threshold, predicates, mode_graph, mode_score, n_samples, n_inliers, n_outliers, mode)  
+        dot, event_log, log_base = get_dpg(data, features_name, iForest, decimal_threshold, predicates, mode_graph, mode_score, n_samples, n_inliers, n_outliers, mode, n_jobs)  
         
         paths = extract_paths(event_log)
                 
