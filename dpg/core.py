@@ -444,6 +444,15 @@ def discover_dfg(log, predicates, mode_score, max_depth, n_outliers, n_inliers, 
 
     return dfg, log
 
+def abbreviate_label(label, max_length=10):
+    """ Generates an integer key from a label using hashing to ensure uniqueness within length constraints """
+    # Generate a hash of the label
+    hash_digest = hashlib.sha1(label.encode()).hexdigest()
+    # Convert the first few characters of the hash to an integer
+    # The number of characters you take (here 10) affects the range of possible integers
+    # Adjust the slice size as necessary to avoid collisions in your specific application
+    return str(int(hash_digest[:max_length], 16))
+
 def generate_dot(dfg):
     """
     Creates a Graphviz directed graph (digraph) from a Data Flow Graph (DFG) dictionary and returns the dot representation.
@@ -476,11 +485,12 @@ def generate_dot(dfg):
 
     # Iterate through the sorted DFG dictionary
     for k, v in sorted_dict_values.items():
-        
+        in_ = abbreviate_label(str(int(hashlib.sha1(k[0].encode()).hexdigest(), 16)))
+        out_ = abbreviate_label(str(int(hashlib.sha1(k[1].encode()).hexdigest(), 16)))
         # Add the source node to the graph if not already added
         if k[0] not in added_nodes:
             dot.node(
-                str(int(hashlib.sha1(k[0].encode()).hexdigest(), 16)),
+                in_,
                 label=f"{k[0]}",
                 style="filled",
                 fontsize="20",
@@ -491,7 +501,7 @@ def generate_dot(dfg):
         # Add the destination node to the graph if not already added
         if k[1] not in added_nodes:
             dot.node(
-                str(int(hashlib.sha1(k[1].encode()).hexdigest(), 16)),
+                out_,
                 label=f"{k[1]}",
                 style="filled",
                 fontsize="20",
@@ -501,8 +511,8 @@ def generate_dot(dfg):
         
         # Add an edge between the source and destination nodes with the transition count as the label
         dot.edge(
-            str(int(hashlib.sha1(k[0].encode()).hexdigest(), 16)),
-            str(int(hashlib.sha1(k[1].encode()).hexdigest(), 16)),
+            in_,
+            out_,
             label=str(v),
             penwidth="1",
             fontsize="18"
@@ -564,12 +574,14 @@ def get_dpg_metrics(dpg_model, nodes_list, outliers_df, event_log, edges_label, 
     """
     # Set the random seed for reproducibility
     np.random.seed(42)
-
+    pd.DataFrame(nodes_list).to_csv('nodes_list.csv', index=False)
+    
     print("Calculating metrics...")
     # Create a dictionary to map node labels to their identifiers
     diz_nodes = {node[1] if "->" not in node[0] else None: node[0] for node in nodes_list}
     # Remove any None keys from the dictionary
     diz_nodes = {k: v for k, v in diz_nodes.items() if k is not None}
+    
     # Create a reversed dictionary to map node identifiers to their labels
     diz_nodes_reversed = {v: k for k, v in diz_nodes.items()}
     
@@ -747,6 +759,7 @@ def get_dpg(X_train, feature_names, model, decimal_threshold, predicates, mode_g
 
     print("Extracting graph...")
     dot = generate_dot(dfg)
+    log_base.to_csv('log_base.csv', index=False)
 
     return dot, event_log, log_base
 

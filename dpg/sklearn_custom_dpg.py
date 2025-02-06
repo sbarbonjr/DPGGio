@@ -165,7 +165,8 @@ def test_base_sklearn(datasets, n_learners, decimal_threshold, contamination, se
                     attribute=attribute,
                     communities=communities,
                     class_flag=class_flag,
-                    edge_attribute=edge_attribute
+                    edge_attribute=edge_attribute,
+                    variant=True
             )
         return df_nodes, df_dpg, -1, df_edges
                     
@@ -250,6 +251,7 @@ def test_base_sklearn(datasets, n_learners, decimal_threshold, contamination, se
                         communities=communities,
                         class_flag=class_flag,
                         edge_attribute=edge_attribute,
+                        variant=True,
                 )
 
         print(outliers_df)
